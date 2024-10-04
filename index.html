@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>flux-pro-1.1 by WlaDiS</title>
+    <style>
+        body {
+            background-color: #1E1E1E;
+            color: #E0E0E0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        #main-container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #1E1E1E;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        textarea, input, button, select {
+            background-color: #2E2E2E;
+            color: #E0E0E0;
+            border: 1px solid #444444;
+            font-size: 18px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        button:hover {
+            color: #003366;
+        }
+
+        #console-output, #query-input {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #console-output {
+            height: 100px;
+            overflow-y: auto;
+        }
+
+        #image-container {
+            margin-top: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #444444;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        .image-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .image-wrapper img {
+            width: 350px;
+            height: 350px;
+            object-fit: contain;
+            cursor: pointer;
+        }
+
+        .button-container, .settings-container {
+            display: flex;
+            flex-wrap: nowrap;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .button-container button {
+            height: 60px;
+            flex: 1;
+            min-width: 150px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-container {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .setting-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #api-key-button {
+            min-width: 160px;
+            flex: none;
+        }
+
+        #translate-button {
+            min-width: 150px;
+        }
+
+        .button-text {
+            margin: 0;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+<div id="main-container">
+    <textarea id="query-input" placeholder="Введите запрос..." rows="4"></textarea>
+    <div class="settings-container">
+        <div class="setting-group">
+            <label for="width-input">Ширина:</label>
+            <input id="width-input" type="number" value="1024" min="64" max="2048">
+        </div>
+        <div class="setting-group">
+            <label for="height-input">Высота:</label>
+            <input id="height-input" type="number" value="768" min="64" max="2048">
+        </div>
+        <div class="setting-group">
+            <label for="safety-select">Уровень безопасности:</label>
+            <select id="safety-select">
+                <option value="0" selected>0 (Наиболее строгий)</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6 (Наименее строгий)</option>
+            </select>
+        </div>
+        <div class="setting-group">
+            <label for="upsampling-checkbox">Апсемплинг:</label>
+            <input id="upsampling-checkbox" type="checkbox">
+        </div>
+    </div>
+    <div class="button-container">
+        <button id="translate-button">
+            <span class="button-text">Перевести</span>
+        </button>
+        <button id="submit-button">
+            <span class="button-text">Отправить</span>
+        </button>
+        <button id="api-key-button">Принять API ключ</button>
+    </div>
+    <div id="image-container"></div>
+    <textarea id="console-output" readonly></textarea>
+</div>
+
+<script>
+    const API_URL = "https://api.bfl.ml/v1/flux-pro-1.1";
+    const RESULT_URL = "https://api.bfl.ml/v1/get_result";
+    let API_KEY = localStorage.getItem('api_key') || "";
+    let imageCount = 0;
+
+    // Загрузка сохранённых настроек
+    document.addEventListener("DOMContentLoaded", () => {
+        loadSettings();
+    });
+
+    // Сохранение настроек при их изменении
+    document.getElementById("width-input").addEventListener("input", saveSettings);
+    document.getElementById("height-input").addEventListener("input", saveSettings);
+    document.getElementById("safety-select").addEventListener("change", saveSettings);
+    document.getElementById("upsampling-checkbox").addEventListener("change", saveSettings);
+
+    document.getElementById("submit-button").addEventListener("click", () => {
+        sendRequest();
+    });
+
+    document.getElementById("translate-button").addEventListener("click", async () => {
+        const userInput = document.getElementById("query-input").value;
+        if (!userInput.trim()) {
+            appendToConsole("Пожалуйста, введите текст для перевода.");
+            return;
+        }
+
+        appendToConsole(`Перевод текста: "${userInput}"...`);
+
+        const translatedText = await translateText(userInput);
+        if (translatedText) {
+            document.getElementById("query-input").value = translatedText;
+            appendToConsole("Перевод выполнен успешно.");
+        } else {
+            appendToConsole("Ошибка при переводе текста.");
+        }
+    });
+
+    document.getElementById("api-key-button").addEventListener("click", () => {
+        const apiKey = prompt("Введите API ключ:");
+        if (apiKey) {
+            API_KEY = apiKey;
+            localStorage.setItem('api_key', API_KEY);
+            appendToConsole("API ключ успешно принят и сохранен.");
+        } else {
+            appendToConsole("API ключ не введен.");
+        }
+    });
+
+    // Сохранение настроек
+    function saveSettings() {
+        const width = document.getElementById("width-input").value;
+        const height = document.getElementById("height-input").value;
+        const safetyTolerance = document.getElementById("safety-select").value;
+        const promptUpsampling = document.getElementById("upsampling-checkbox").checked;
+
+        localStorage.setItem('width', width);
+        localStorage.setItem('height', height);
+        localStorage.setItem('safetyTolerance', safetyTolerance);
+        localStorage.setItem('promptUpsampling', promptUpsampling);
+
+        appendToConsole("Настройки сохранены.");
+    }
+
+    // Загрузка сохранённых настроек
+    function loadSettings() {
+        const savedWidth = localStorage.getItem('width');
+        const savedHeight = localStorage.getItem('height');
+        const savedSafetyTolerance = localStorage.getItem('safetyTolerance');
+        const savedPromptUpsampling = localStorage.getItem('promptUpsampling') === 'true';
+
+        if (savedWidth) {
+            document.getElementById("width-input").value = savedWidth;
+        }
+        if (savedHeight) {
+            document.getElementById("height-input").value = savedHeight;
+        }
+        if (savedSafetyTolerance) {
+            document.getElementById("safety-select").value = savedSafetyTolerance;
+        }
+        document.getElementById("upsampling-checkbox").checked = savedPromptUpsampling;
+
+        appendToConsole("Настройки загружены.");
+    }
+
+    function sendRequest() {
+        const userInput = document.getElementById("query-input").value;
+        if (!userInput.trim()) {
+            appendToConsole("Пожалуйста, введите запрос.");
+            return;
+        }
+
+        const width = parseInt(document.getElementById("width-input").value, 10);
+        const height = parseInt(document.getElementById("height-input").value, 10);
+        const safetyTolerance = parseInt(document.getElementById("safety-select").value, 10);
+        const promptUpsampling = document.getElementById("upsampling-checkbox").checked;
+
+        appendToConsole(`Отправка запроса: "${userInput}" с настройками (Ширина: ${width}, Высота: ${height}, Уровень безопасности: ${safetyTolerance}, Апсемплинг: ${promptUpsampling})...`);
+
+        const payload = {
+            prompt: userInput,
+            width: width,
+            height: height,
+            prompt_upsampling: promptUpsampling,
+            seed: generateRandomSeed(),
+            safety_tolerance: safetyTolerance
+        };
+
+        fetch(API_URL, {
+            method: "POST",
+            headers: {
+                "x-key": API_KEY,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.id) {
+                appendToConsole(`Запрос отправлен, ID: ${data.id}`);
+                checkResult(data.id);
+            } else {
+                appendToConsole("Ошибка: ID не получен.");
+            }
+        })
+        .catch(error => {
+            appendToConsole(`Ошибка при выполнении запроса: ${error.message}`);
+        });
+    }
+
+    function checkResult(id) {
+        const interval = setInterval(() => {
+            fetch(`${RESULT_URL}?id=${id}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "Ready" && data.result && data.result.sample) {
+                    clearInterval(interval);
+                    displayImage(data.result.sample);
+                    appendToConsole("Изображение успешно загружено.");
+                } else {
+                    appendToConsole(`Статус изображения: ${data.status}. Ждем...`);
+                }
+            })
+            .catch(error => {
+                clearInterval(interval);
+                appendToConsole(`Ошибка при получении результата: ${error.message}`);
+            });
+        }, 5000);
+    }
+    
+    function displayImage(imageUrl) {
+    imageCount++;
+
+    const container = document.createElement("div");
+    container.className = "image-wrapper";
+
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = `Изображение ${imageCount}`;
+
+    // При клике на изображение загружаем его
+    img.addEventListener("click", () => downloadImage(imageUrl));
+
+    const label = document.createElement("span");
+    label.textContent = `№${imageCount}`;
+
+    container.appendChild(img);
+    container.appendChild(label);
+
+    document.getElementById("image-container").appendChild(container);
+}
+
+function downloadImage(imageUrl) {
+    // Открываем изображение в новой вкладке в скрытом окне для скачивания
+    const link = document.createElement("a");
+    link.href = imageUrl;
+    link.target = "_blank"; // Открываем в новом окне, чтобы не мешать текущей странице
+    link.download = `Image_${new Date().toISOString().replace(/[:.]/g, '_')}.jpg`; // Устанавливаем имя файла
+
+    // Инициируем клик для открытия изображения
+    link.click();
+    appendToConsole("Изображение открыто для загрузки.");
+}
+
+    async function translateText(text) {
+        const sourceLang = "ru";
+        const targetLang = "en";
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`;
+
+        try {
+            const response = await fetch(url);
+            const data = await response.json();
+            return data[0][0][0];
+        } catch (error) {
+            console.error("Ошибка при переводе:", error);
+            return null;
+        }
+    }
+
+    function generateRandomSeed() {
+        return Math.floor(Math.random() * 1000000);
+    }
+
+    function appendToConsole(message) {
+        const consoleOutput = document.getElementById("console-output");
+        consoleOutput.value += `${new Date().toLocaleTimeString()}: ${message}\n`;
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    }
+</script>
+</body>
+</html>
